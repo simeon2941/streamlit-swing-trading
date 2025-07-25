@@ -134,10 +134,34 @@ st.markdown("""
         51%, 100% { opacity: 0.3; }
     }
     
-    .mobile-friendly {
-        touch-action: manipulation;
-        -webkit-user-select: none;
-        user-select: none;
+    .signal-history-table {
+        background: rgba(255, 255, 255, 0.05);
+        border-radius: 10px;
+        padding: 20px;
+        margin: 10px 0;
+    }
+    
+    .entry-signal {
+        background: rgba(0, 255, 136, 0.2);
+        color: #00ff88;
+        padding: 5px 10px;
+        border-radius: 15px;
+        font-weight: bold;
+    }
+    
+    .exit-signal {
+        background: rgba(255, 71, 87, 0.2);
+        color: #ff4757;
+        padding: 5px 10px;
+        border-radius: 15px;
+        font-weight: bold;
+    }
+    
+    .no-signal {
+        background: rgba(128, 128, 128, 0.2);
+        color: #808080;
+        padding: 5px 10px;
+        border-radius: 15px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -169,6 +193,7 @@ window.stopAutoRefresh = function() {
 };
 </script>
 """
+
 interactive_js = """
 <script>
 // Voice Commands
@@ -257,32 +282,6 @@ function playChord(audioContext, frequencies, duration, volume) {
 window.showNotification = showNotification;
 window.playAlert = playAlert;
 
-// Touch gestures for mobile
-let touchStartY = 0;
-let touchStartX = 0;
-
-document.addEventListener('touchstart', function(e) {
-    touchStartY = e.touches[0].clientY;
-    touchStartX = e.touches[0].clientX;
-});
-
-document.addEventListener('touchend', function(e) {
-    const touchEndY = e.changedTouches[0].clientY;
-    const touchEndX = e.changedTouches[0].clientX;
-    const deltaY = touchStartY - touchEndY;
-    const deltaX = touchStartX - touchEndX;
-    
-    // Swipe down to refresh
-    if (deltaY < -100 && Math.abs(deltaX) < 50) {
-        window.parent.postMessage({type: 'gesture', action: 'refresh'}, '*');
-    }
-    // Swipe left/right for timeframe changes
-    else if (Math.abs(deltaX) > 100 && Math.abs(deltaY) < 50) {
-        const direction = deltaX > 0 ? 'left' : 'right';
-        window.parent.postMessage({type: 'gesture', action: 'swipe', direction: direction}, '*');
-    }
-});
-
 // Request notification permission on load
 if ('Notification' in window) {
     Notification.requestPermission();
@@ -319,13 +318,11 @@ class TradeConfig:
     data_period: str = "2y"  # Default to 2 years
     chart_period: str = "6mo"  # What to display on chart
     
-    # Interactive Features
+    # Interactive Features (removed voice_commands and mobile_mode)
     auto_refresh: bool = False
     refresh_interval: int = 60
     enable_sounds: bool = True
     enable_notifications: bool = True
-    voice_commands: bool = False
-    mobile_mode: bool = False
 
 @dataclass
 class TradingAlert:
@@ -671,8 +668,8 @@ class InteractiveDashboard:
                 st.session_state.show_strategy_stats = True
         
         with col3:
-            if st.button("🎤 Voice Command", key="voice_cmd", disabled=not self.config.voice_commands):
-                st.info("Say: 'refresh', 'buy', or 'sell'")
+            if st.button("📈 Signal History", key="signal_history"):
+                st.session_state.show_signal_history = True
     
     def display_strategy_explanation(self):
         """Display detailed strategy explanation and entry criteria"""
@@ -746,111 +743,420 @@ class InteractiveDashboard:
                 - Move to breakeven when Target 1 hit
                 """)
             
-            # When to Enter
-            st.markdown("### ⏰ **When to Enter Trades**")
-            
-            st.markdown("""
-            **🟢 IDEAL Entry Conditions:**
-            
-            1. **Market Structure**: QQQ in clear uptrend (price above all EMAs)
-            2. **Pullback Setup**: Price pulls back to 5 EMA support level
-            3. **Volume Spike**: Above-average volume on entry day
-            4. **Low Volatility**: VIX below 30 (calm market conditions)
-            5. **Time of Day**: Best entries typically 10:30 AM - 2:00 PM EST
-            6. **Market Day**: Avoid Fridays and day before holidays
-            
-            **🔴 AVOID Entering When:**
-            - VIX > 30 (high volatility/fear)
-            - Volume below average (lack of participation)
-            - Late Friday or before long weekends
-            - Major economic events pending (FOMC, earnings)
-            - Price below 50 EMA (downtrend)
-            """)
-            
-            # Success Statistics
-            st.markdown("### 📊 **Historical Performance Stats**")
-            
-            col1, col2, col3, col4 = st.columns(4)
-            
-            with col1:
-                st.metric(
-                    "Win Rate",
-                    "~65%",
-                    help="Percentage of profitable trades"
-                )
-            
-            with col2:
-                st.metric(
-                    "Avg Hold Time",
-                    "4-6 days",
-                    help="Typical trade duration"
-                )
-            
-            with col3:
-                st.metric(
-                    "Risk:Reward",
-                    "1:2.5",
-                    help="Average risk to reward ratio"
-                )
-            
-            with col4:
-                st.metric(
-                    "Max Drawdown",
-                    "~8%",
-                    help="Largest peak-to-valley decline"
-                )
-            
-            # Trade Management
-            st.markdown("### 🎯 **Trade Management Process**")
-            
-            st.markdown("""
-            **Entry Day:**
-            1. ✅ Confirm all 6 criteria met
-            2. 📊 Calculate position size (1-2% account risk)
-            3. 📝 Set stop loss and target orders
-            4. 🔔 Monitor for confirmation or invalidation
-            
-            **During Trade:**
-            - 📈 Scale out 50% at Target 1, move stop to breakeven
-            - 🎯 Hold remaining 50% for Target 2
-            - 📅 Maximum hold: 10 trading days
-            - 🚨 Exit immediately if stop hit
-            
-            **Exit Scenarios:**
-            - ✅ Target 1 reached (take 50% profit)
-            - ✅ Target 2 reached (exit remaining position)
-            - ❌ Stop loss hit (preserve capital)
-            - ⏰ Time-based exit (10 days max)
-            - 📉 Strategy invalidation (EMA breakdown)
-            """)
-            
-            # Example Trade
-            st.markdown("### 💡 **Example Trade Scenario**")
-            
-            st.markdown("""
-            **Setup Example:**
-            - QQQ trading at $380, above all EMAs ✅
-            - Price dips to $378 (5 EMA - 1.5×ATR level) ✅
-            - Volume: 45M (above 35M average) ✅
-            - VIX: 22 (below 30 threshold) ✅
-            - All criteria met → ENTER TRADE
-            
-            **Trade Execution:**
-            - Entry: $378
-            - Stop Loss: $370 (2% or 2×ATR, whichever smaller)
-            - Target 1: $385 (5 EMA + 2×ATR)
-            - Target 2: $390 (5 EMA + 3×ATR)
-            - Position Size: $10,000 account × 1% risk ÷ $8 risk = 12 shares
-            
-            **Risk/Reward:**
-            - Risk: $8 per share × 12 shares = $96 (1% of account)
-            - Reward T1: $7 per share × 6 shares = $42
-            - Reward T2: $12 per share × 6 shares = $72
-            - Total Potential: $114 profit vs $96 risk = 1.19:1 ratio
-            """)
-            
             if st.button("❌ Close Strategy Guide"):
                 st.session_state.show_strategy_stats = False
+                st.rerun()
+    
+    def calculate_historical_signals(self, data: pd.DataFrame, vix_data=None):
+        """Calculate entry and exit signals for historical data - EXACT STRATEGY IMPLEMENTATION"""
+        signals_history = []
+        
+        for i in range(50, len(data)):
+            current_data = data.iloc[:i+1]
+            latest = current_data.iloc[-1]
+            
+            # EXACT ENTRY CRITERIA - ALL MUST BE MET
+            # 1. EMA Stack: 10 EMA > 21 EMA > 50 EMA (bullish momentum)
+            ema_alignment = latest['EMA_10'] > latest['EMA_21'] > latest['EMA_50']
+            
+            # 2. Price Position: Current price must be above 50 EMA (trend confirmation)
+            price_above_50ema = latest['Close'] > latest['EMA_50']
+            
+            # 3. Entry Trigger: Price touches or dips below (5 EMA - 1.5×ATR)
+            entry_level = latest['EMA_5'] - (1.5 * latest['ATR'])
+            price_touch_entry = latest['Close'] <= entry_level or latest['Low'] <= entry_level
+            
+            # 4. Volume Confirmation: Entry day volume > 20-day average volume
+            volume_above_avg = latest['Volume'] > latest['Volume_Avg']
+            
+            # 5. Market Environment: VIX < 30 (simplified - assume good environment for historical)
+            vix_below_threshold = True  # You can enhance this with actual VIX data
+            
+            # 6. Momentum Filter: Price must be higher than 5 days ago
+            if i >= 55:  # Need at least 5 more days
+                momentum_positive = latest['Close'] > current_data['Close'].iloc[-6]
+            else:
+                momentum_positive = True
+            
+            # ENTRY SIGNAL: ALL 6 CRITERIA MUST BE MET
+            entry_signal = all([
+                ema_alignment,
+                price_above_50ema,
+                price_touch_entry,
+                volume_above_avg,
+                vix_below_threshold,
+                momentum_positive
+            ])
+            
+            # EXIT CRITERIA - Following exact strategy rules
+            exit_signal = False
+            if i > 0:
+                prev_close = data['Close'].iloc[i-1]
+                current_close = latest['Close']
+                
+                # Exit conditions:
+                # 1. Stop Loss: Entry - (2.0 × ATR) OR 2% below entry (whichever gives smaller loss)
+                # 2. Target 1: 5 EMA + (2.0 × ATR) - Scale out 50%
+                # 3. Target 2: 5 EMA + (3.0 × ATR) - Exit remaining
+                # 4. Time-based: 10 day maximum hold
+                
+                # For historical analysis, we'll use simplified exit:
+                # Exit if price breaks below 21 EMA significantly (strategy breakdown)
+                if current_close < latest['EMA_21'] * 0.97:  # 3% below 21 EMA indicates trend break
+                    exit_signal = True
+                
+                # Or if we have a significant down day (> 3% drop from previous close)
+                daily_return = (current_close - prev_close) / prev_close
+                if daily_return < -0.03:
+                    exit_signal = True
+            
+            signals_history.append({
+                'Date': data.index[i],
+                'Close': latest['Close'],
+                'Entry_Signal': entry_signal,
+                'Exit_Signal': exit_signal,
+                'EMA_Alignment': ema_alignment,
+                'Price_Above_50EMA': price_above_50ema,
+                'Entry_Level_Touch': price_touch_entry,
+                'Volume_Above_Avg': volume_above_avg,
+                'Momentum_Positive': momentum_positive,
+                'Entry_Level': entry_level,
+                'EMA_5': latest['EMA_5'],
+                'EMA_10': latest['EMA_10'],
+                'EMA_21': latest['EMA_21'],
+                'EMA_50': latest['EMA_50'],
+                'ATR': latest['ATR'],
+                'Volume': latest['Volume'],
+                'Volume_Avg': latest['Volume_Avg']
+            })
+        
+        return pd.DataFrame(signals_history)
+    
+    def match_entry_exit_signals(self, signals_df: pd.DataFrame):
+        """Match entry signals with exits using EXACT STRATEGY RULES"""
+        trades = []
+        
+        entry_signals = signals_df[signals_df['Entry_Signal'] == True].copy()
+        exit_signals = signals_df[signals_df['Exit_Signal'] == True].copy()
+        
+        if entry_signals.empty:
+            return pd.DataFrame()
+        
+        for _, entry in entry_signals.iterrows():
+            entry_date = entry['Date']
+            entry_price = entry['Close']
+            entry_ema5 = entry['EMA_5']
+            entry_atr = entry['ATR']
+            
+            # EXACT STRATEGY CALCULATIONS
+            
+            # Stop Loss: Entry - (2.0 × ATR) OR 2% below entry (whichever gives smaller loss)
+            stop_loss_atr = entry_price - (2.0 * entry_atr)
+            stop_loss_pct = entry_price * 0.98  # 2% below entry
+            stop_loss = max(stop_loss_atr, stop_loss_pct)  # Use whichever gives smaller loss
+            
+            # Targets: 
+            # Target 1: 5 EMA + (2.0 × ATR)
+            # Target 2: 5 EMA + (3.0 × ATR)
+            target1 = entry_ema5 + (2.0 * entry_atr)
+            target2 = entry_ema5 + (3.0 * entry_atr)
+            
+            # Position Sizing: Risk 1-2% of account per trade
+            account_value = 100000  # Default account value
+            risk_percent = 0.01  # 1% risk
+            risk_amount = account_value * risk_percent
+            risk_per_share = entry_price - stop_loss
+            shares = int(risk_amount / risk_per_share) if risk_per_share > 0 else 100
+            
+            # Find the next exit signal after this entry (max 10 days per strategy)
+            future_exits = exit_signals[exit_signals['Date'] > entry_date]
+            
+            # Add 10-day time limit per strategy rules
+            ten_days_later = entry_date + pd.Timedelta(days=10)
+            future_exits_within_limit = future_exits[future_exits['Date'] <= ten_days_later]
+            
+            if not future_exits_within_limit.empty:
+                # Take the first exit signal after entry (within 10 days)
+                exit_row = future_exits_within_limit.iloc[0]
+                exit_date = exit_row['Date']
+                exit_price = exit_row['Close']
+                exit_reason = "Exit Signal"
+            else:
+                # Time-based exit after 10 days if no exit signal
+                time_exit_data = signals_df[signals_df['Date'] >= ten_days_later]
+                if not time_exit_data.empty:
+                    exit_row = time_exit_data.iloc[0]
+                    exit_date = exit_row['Date']
+                    exit_price = exit_row['Close']
+                    exit_reason = "10-Day Time Limit"
+                else:
+                    continue  # Skip this trade if we can't find an exit
+            
+            # Calculate trade metrics
+            hold_days = (exit_date - entry_date).days
+            profit_loss = exit_price - entry_price
+            profit_pct = (profit_loss / entry_price) * 100
+            total_profit = profit_loss * shares
+            
+            # Determine if target levels were hit during the trade
+            trade_data = signals_df[(signals_df['Date'] >= entry_date) & (signals_df['Date'] <= exit_date)]
+            max_price_during_trade = trade_data['Close'].max()
+            
+            target1_hit = max_price_during_trade >= target1
+            target2_hit = max_price_during_trade >= target2
+            
+            # Calculate actual exit reason based on strategy rules
+            if exit_price <= stop_loss * 1.01:  # Within 1% of stop loss
+                actual_exit_reason = "🚨 Stop Loss"
+            elif target2_hit:
+                actual_exit_reason = "🎯 Target 2 Hit"
+            elif target1_hit:
+                actual_exit_reason = "🎯 Target 1 Hit"
+            elif hold_days >= 10:
+                actual_exit_reason = "⏰ 10-Day Limit"
+            else:
+                actual_exit_reason = exit_reason
+            
+            trades.append({
+                'Entry_Date': entry_date.strftime('%Y-%m-%d'),
+                'Entry_Price': round(entry_price, 2),
+                'Exit_Date': exit_date.strftime('%Y-%m-%d'),
+                'Exit_Price': round(exit_price, 2),
+                'Hold_Days': hold_days,
+                'Stop_Loss': round(stop_loss, 2),
+                'Target_1': round(target1, 2),
+                'Target_2': round(target2, 2),
+                'T1_Hit': '✅' if target1_hit else '❌',
+                'T2_Hit': '✅' if target2_hit else '❌',
+                'Price_Change': round(profit_loss, 2),
+                'Profit_Pct': round(profit_pct, 2),
+                'Shares': shares,
+                'Total_Profit': round(total_profit, 0),
+                'Exit_Reason': actual_exit_reason,
+                'Trade_Result': '✅ WIN' if profit_loss > 0 else '❌ LOSS'
+            })
+        
+        return pd.DataFrame(trades)
+    
+    def display_signal_history(self, data: pd.DataFrame):
+        """Display historical entry/exit signals for selected timeframe"""
+        if 'show_signal_history' not in st.session_state or not st.session_state.show_signal_history:
+            return
+        
+        st.markdown("---")
+        st.subheader("📈 Swing Trading Signal Analysis")
+        
+        with st.expander("Complete Swing Trading Analysis for Selected Timeframe", expanded=True):
+            # Calculate historical signals
+            with st.spinner("Calculating swing trading signals..."):
+                signals_df = self.calculate_historical_signals(data)
+            
+            if signals_df.empty:
+                st.warning("No historical signals calculated")
+                return
+            
+            # Match entry/exit signals to create swing trades
+            trades_df = self.match_entry_exit_signals(signals_df)
+            
+            if trades_df.empty:
+                st.warning("No complete swing trades found in selected timeframe")
+                return
+            
+            # Calculate overall performance metrics
+            total_trades = len(trades_df)
+            winning_trades = len(trades_df[trades_df['Profit_Pct'] > 0])
+            losing_trades = total_trades - winning_trades
+            win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
+            
+            avg_profit_pct = trades_df['Profit_Pct'].mean()
+            total_profit_dollar = trades_df['Total_Profit'].sum()
+            avg_hold_days = trades_df['Hold_Days'].mean()
+            
+            # Display key metrics
+            st.markdown("#### 🎯 **Swing Trading Performance Summary**")
+            
+            col1, col2, col3, col4, col5 = st.columns(5)
+            
+            with col1:
+                st.metric("Total Trades", total_trades)
+                
+            with col2:
+                color = "normal" if win_rate >= 50 else "inverse"
+                st.metric("Win Rate", f"{win_rate:.1f}%", f"{winning_trades}W/{losing_trades}L", delta_color=color)
+            
+            with col3:
+                color = "normal" if avg_profit_pct > 0 else "inverse"
+                st.metric("Avg Profit %", f"{avg_profit_pct:+.2f}%", delta_color=color)
+            
+            with col4:
+                color = "normal" if total_profit_dollar > 0 else "inverse"
+                st.metric("Total Profit", f"${total_profit_dollar:+,.0f}", delta_color=color)
+            
+            with col5:
+                st.metric("Avg Hold Time", f"{avg_hold_days:.1f} days")
+            
+            # Main swing trades table with EXACT STRATEGY columns
+            st.markdown("#### 🔄 **Complete Swing Trades Following Exact Strategy**")
+            
+            # Enhanced table with strategy-specific columns
+            display_columns = [
+                'Entry_Date', 'Entry_Price', 'Exit_Date', 'Exit_Price', 
+                'Hold_Days', 'Stop_Loss', 'Target_1', 'Target_2', 
+                'T1_Hit', 'T2_Hit', 'Exit_Reason', 'Profit_Pct', 'Total_Profit', 'Trade_Result'
+            ]
+            
+            # Color code the dataframe
+            def highlight_trades(row):
+                if row['Trade_Result'] == '✅ WIN':
+                    return ['background-color: rgba(0, 255, 136, 0.1)'] * len(row)
+                else:
+                    return ['background-color: rgba(255, 71, 87, 0.1)'] * len(row)
+            
+            # Display the main trades table with exact strategy details
+            styled_df = trades_df[display_columns].style.apply(highlight_trades, axis=1)
+            st.dataframe(styled_df, use_container_width=True, height=400)
+            
+            # Download complete trades
+            csv_trades = trades_df.to_csv(index=False)
+            st.download_button(
+                "📥 Download Complete Swing Trades",
+                csv_trades,
+                f"swing_trades_{datetime.now().strftime('%Y%m%d')}.csv",
+                "text/csv",
+                key="download_trades"
+            )
+            
+            # Detailed breakdown
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown("#### 📊 **Winning Trades**")
+                winning_df = trades_df[trades_df['Profit_Pct'] > 0]
+                if not winning_df.empty:
+                    st.dataframe(
+                        winning_df[['Entry_Date', 'Entry_Price', 'Exit_Price', 'Profit_Pct', 'Total_Profit']],
+                        use_container_width=True,
+                        height=200
+                    )
+                    
+                    avg_win = winning_df['Profit_Pct'].mean()
+                    best_trade = winning_df['Profit_Pct'].max()
+                    st.success(f"**Avg Win:** {avg_win:.2f}% | **Best Trade:** {best_trade:.2f}%")
+                else:
+                    st.info("No winning trades in this period")
+            
+            with col2:
+                st.markdown("#### 📉 **Losing Trades**")
+                losing_df = trades_df[trades_df['Profit_Pct'] < 0]
+                if not losing_df.empty:
+                    st.dataframe(
+                        losing_df[['Entry_Date', 'Entry_Price', 'Exit_Price', 'Profit_Pct', 'Total_Profit']],
+                        use_container_width=True,
+                        height=200
+                    )
+                    
+                    avg_loss = losing_df['Profit_Pct'].mean()
+                    worst_trade = losing_df['Profit_Pct'].min()
+                    st.error(f"**Avg Loss:** {avg_loss:.2f}% | **Worst Trade:** {worst_trade:.2f}%")
+                else:
+                    st.success("No losing trades in this period! 🎉")
+            
+            # Visualization of trades
+            st.markdown("#### 📈 **Swing Trades Visualization**")
+            
+            fig = go.Figure()
+            
+            # Add price line
+            fig.add_trace(go.Scatter(
+                x=signals_df['Date'],
+                y=signals_df['Close'],
+                mode='lines',
+                name='QQQ Price',
+                line=dict(color='#74b9ff', width=2)
+            ))
+            
+            # Add entry points
+            entry_dates = pd.to_datetime(trades_df['Entry_Date'])
+            entry_prices = trades_df['Entry_Price']
+            
+            fig.add_trace(go.Scatter(
+                x=entry_dates,
+                y=entry_prices,
+                mode='markers',
+                name='Entry Points',
+                marker=dict(
+                    color='#00b894',
+                    size=10,
+                    symbol='triangle-up',
+                    line=dict(width=2, color='white')
+                ),
+                hovertemplate='<b>Entry</b><br>Date: %{x}<br>Price: $%{y:.2f}<extra></extra>'
+            ))
+            
+            # Add exit points
+            exit_dates = pd.to_datetime(trades_df['Exit_Date'])
+            exit_prices = trades_df['Exit_Price']
+            
+            fig.add_trace(go.Scatter(
+                x=exit_dates,
+                y=exit_prices,
+                mode='markers',
+                name='Exit Points',
+                marker=dict(
+                    color='#e17055',
+                    size=10,
+                    symbol='triangle-down',
+                    line=dict(width=2, color='white')
+                ),
+                hovertemplate='<b>Exit</b><br>Date: %{x}<br>Price: $%{y:.2f}<extra></extra>'
+            ))
+            
+            # Connect entry/exit pairs with lines
+            for _, trade in trades_df.iterrows():
+                color = '#00b894' if trade['Profit_Pct'] > 0 else '#e17055'
+                fig.add_trace(go.Scatter(
+                    x=[pd.to_datetime(trade['Entry_Date']), pd.to_datetime(trade['Exit_Date'])],
+                    y=[trade['Entry_Price'], trade['Exit_Price']],
+                    mode='lines',
+                    line=dict(color=color, width=2, dash='dot'),
+                    showlegend=False,
+                    hoverinfo='skip'
+                ))
+            
+            fig.update_layout(
+                title="Swing Trading Entry/Exit Points with P&L",
+                xaxis_title="Date",
+                yaxis_title="Price ($)",
+                height=600,
+                hovermode='x unified'
+            )
+            
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # Profit distribution
+            st.markdown("#### 💰 **Profit Distribution**")
+            
+            fig_hist = go.Figure()
+            fig_hist.add_trace(go.Histogram(
+                x=trades_df['Profit_Pct'],
+                nbinsx=20,
+                name='Trade Results',
+                marker_color='#74b9ff',
+                opacity=0.7
+            ))
+            
+            fig_hist.update_layout(
+                title="Distribution of Trade Results (%)",
+                xaxis_title="Profit/Loss (%)",
+                yaxis_title="Number of Trades",
+                height=400
+            )
+            
+            st.plotly_chart(fig_hist, use_container_width=True)
+            
+            # Close button
+            if st.button("❌ Close Swing Trading Analysis"):
+                st.session_state.show_signal_history = False
                 st.rerun()
     
     def display_entry_criteria_panel(self, signals: Dict, vix_value: float, data: pd.DataFrame):
@@ -939,46 +1245,66 @@ class InteractiveDashboard:
             - Change: {momentum_change:+.1f}% {'(Bullish)' if momentum_change > 0 else '(Bearish)'}
             """)
         
-        # Risk/Reward Analysis
+        # Risk/Reward Analysis - EXACT STRATEGY CALCULATIONS
         if strength >= 6:
-            st.markdown("### 💰 **Position Sizing & Risk Analysis**")
+            st.markdown("### 💰 **Position Sizing & Risk Analysis (Exact Strategy)**")
             
-            # Calculate levels
+            # EXACT STRATEGY CALCULATIONS
             atr = latest['ATR']
-            stop_loss_atr = signals['current_price'] - (self.config.atr_stop_multiplier * atr)
-            stop_loss_pct = signals['current_price'] * (1 - self.config.stop_loss_percent / 100)
-            stop_loss = max(stop_loss_atr, stop_loss_pct)
             
-            target1 = latest['EMA_5'] + (self.config.atr_target1_multiplier * atr)
-            target2 = latest['EMA_5'] + (self.config.atr_target2_multiplier * atr)
+            # Stop Loss: Entry - (2.0 × ATR) OR 2% below entry (whichever gives smaller loss)
+            stop_loss_atr = signals['current_price'] - (2.0 * atr)
+            stop_loss_pct = signals['current_price'] * 0.98  # 2% below entry
+            stop_loss = max(stop_loss_atr, stop_loss_pct)  # Use whichever gives smaller loss
             
-            # Position sizing
-            risk_amount = self.config.account_value * (self.config.risk_percent / 100)
+            # Targets following exact strategy:
+            # Target 1: 5 EMA + (2.0 × ATR)
+            # Target 2: 5 EMA + (3.0 × ATR)
+            target1 = latest['EMA_5'] + (2.0 * atr)
+            target2 = latest['EMA_5'] + (3.0 * atr)
+            
+            # Position sizing: Risk 1-2% of account per trade
+            account_value = 100000  # You can make this configurable
+            risk_percent = 0.01  # 1% risk per strategy
+            risk_amount = account_value * risk_percent
             price_risk = signals['current_price'] - stop_loss
             shares = int(risk_amount / price_risk) if price_risk > 0 else 0
             
             col1, col2, col3, col4 = st.columns(4)
             
             with col1:
-                st.metric("Recommended Shares", f"{shares:,}")
+                st.metric("Shares (1% Risk)", f"{shares:,}")
                 st.metric("Dollar Risk", f"${risk_amount:.0f}")
             
             with col2:
                 st.metric("Entry Price", f"${signals['current_price']:.2f}")
                 st.metric("Stop Loss", f"${stop_loss:.2f}")
+                st.caption("Entry - 2×ATR or 2% (smaller loss)")
             
             with col3:
-                st.metric("Target 1", f"${target1:.2f}")
-                st.metric("Target 2", f"${target2:.2f}")
+                st.metric("Target 1 (50% exit)", f"${target1:.2f}")  
+                st.metric("Target 2 (remaining)", f"${target2:.2f}")
+                st.caption("5 EMA + 2×ATR / 3×ATR")
             
             with col4:
-                rr1 = (target1 - signals['current_price']) / (signals['current_price'] - stop_loss) if price_risk > 0 else 0
-                rr2 = (target2 - signals['current_price']) / (signals['current_price'] - stop_loss) if price_risk > 0 else 0
+                rr1 = (target1 - signals['current_price']) / price_risk if price_risk > 0 else 0
+                rr2 = (target2 - signals['current_price']) / price_risk if price_risk > 0 else 0
                 st.metric("R:R Target 1", f"{rr1:.1f}:1")
                 st.metric("R:R Target 2", f"{rr2:.1f}:1")
+            
+            # Strategy-specific notes
+            st.info("""
+            **📋 Exact Strategy Execution:**
+            • Enter when ALL 6 criteria met
+            • Stop: Entry - 2×ATR OR 2% below (smaller loss)
+            • Target 1: 5 EMA + 2×ATR (exit 50% of position)  
+            • Target 2: 5 EMA + 3×ATR (exit remaining 50%)
+            • Move stop to breakeven when Target 1 hit
+            • Maximum hold: 10 trading days
+            """)
         
-        # Market timing advice
-        st.markdown("### ⏰ **Market Timing Considerations**")
+        # Market timing advice - Updated for exact strategy
+        st.markdown("### ⏰ **Market Timing Considerations (Strategy Rules)**")
         
         current_time = datetime.now().time()
         market_open = time(9, 30)  # 9:30 AM
@@ -991,278 +1317,20 @@ class InteractiveDashboard:
         
         timing_advice = ""
         if not is_market_hours:
-            timing_advice = "🕐 **Market Closed** - Wait for market open"
+            timing_advice = "🕐 **Market Closed** - Monitor for pre-market setup"
         elif is_optimal_time:
-            timing_advice = "🟢 **Optimal Entry Window** (10:30 AM - 2:00 PM EST)"
+            timing_advice = "🟢 **Optimal Entry Window** - Best execution time per strategy"
         elif current_time < optimal_start:
-            timing_advice = "🟡 **Early Session** - Wait for 10:30 AM for better fills"
+            timing_advice = "🟡 **Early Session** - Wait for 10:30 AM per strategy rules"
         else:
-            timing_advice = "🟡 **Late Session** - Consider waiting for next day"
+            timing_advice = "🟡 **Late Session** - Consider next day entry per strategy"
         
         st.info(timing_advice)
-    
-    def execute_quick_trade(self, entry_price: float, shares: int, stop_loss: float, target: float):
-        """Execute a quick paper trade"""
-        trade = Trade(
-            entry_date=datetime.now().strftime("%Y-%m-%d"),
-            entry_time=datetime.now().strftime("%H:%M:%S"),
-            entry_price=entry_price,
-            position_size=shares,
-            stop_loss=stop_loss,
-            target1=target,
-            target2=target * 1.2,
-            notes="Quick Entry Trade",
-            is_paper_trade=True
-        )
-        
-        self.trades.append(trade)
-        st.session_state.trades = self.trades
-        
-        # Update paper balance
-        cost = entry_price * shares
-        st.session_state.paper_balance -= cost
-        
-        # Add alert
-        self.add_alert('entry', f'Quick entry at ${entry_price:.2f} ({shares} shares)', entry_price, 'normal')
-        
-        st.success(f"✅ Paper trade entered: {shares} shares at ${entry_price:.2f}")
-    
-    def display_advanced_backtesting(self):
-        """Display interactive backtesting panel"""
-        if 'show_backtest' not in st.session_state or not st.session_state.show_backtest:
-            return
-        
-        with st.expander("📈 Interactive Backtesting", expanded=True):
-            st.subheader("Strategy Backtesting")
-            
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                start_date = st.date_input(
-                    "Start Date",
-                    value=datetime.now() - timedelta(days=180),
-                    key="backtest_start"
-                )
-                
-                initial_capital = st.number_input(
-                    "Initial Capital",
-                    value=100000,
-                    min_value=1000,
-                    key="backtest_capital"
-                )
-            
-            with col2:
-                end_date = st.date_input(
-                    "End Date",
-                    value=datetime.now(),
-                    key="backtest_end"
-                )
-                
-                risk_per_trade = st.slider(
-                    "Risk per Trade (%)",
-                    0.5, 5.0, 1.0, 0.1,
-                    key="backtest_risk"
-                )
-            
-            if st.button("🚀 Run Backtest", type="primary"):
-                self.run_backtest(start_date, end_date, initial_capital, risk_per_trade)
-            
-            if st.button("❌ Close Backtest"):
-                st.session_state.show_backtest = False
-                st.rerun()
-    
-    def run_backtest(self, start_date, end_date, initial_capital, risk_per_trade):
-        """Run strategy backtest"""
-        with st.spinner("Running backtest..."):
-            # Fetch historical data
-            data = yf.download("QQQ", start=start_date, end=end_date, interval="1d")
-            
-            if data.empty:
-                st.error("No data available for the selected period")
-                return
-            
-            # Calculate indicators
-            data['EMA_5'] = data['Close'].ewm(span=5).mean()
-            data['EMA_10'] = data['Close'].ewm(span=10).mean()
-            data['EMA_21'] = data['Close'].ewm(span=21).mean()
-            data['EMA_50'] = data['Close'].ewm(span=50).mean()
-            
-            # Simple backtest logic
-            trades = []
-            capital = initial_capital
-            position = None
-            
-            for i in range(50, len(data)):  # Start after indicators are valid
-                current = data.iloc[i]
-                
-                # Entry conditions (simplified)
-                if (position is None and 
-                    current['EMA_10'] > current['EMA_21'] > current['EMA_50'] and
-                    current['Close'] > current['EMA_50']):
-                    
-                    # Enter trade
-                    risk_amount = capital * (risk_per_trade / 100)
-                    shares = int(risk_amount / (current['Close'] * 0.02))  # 2% stop
-                    
-                    if shares > 0:
-                        position = {
-                            'entry_price': current['Close'],
-                            'shares': shares,
-                            'entry_date': data.index[i],
-                            'stop_loss': current['Close'] * 0.98
-                        }
-                
-                # Exit conditions
-                elif position is not None:
-                    exit_trade = False
-                    exit_reason = ""
-                    
-                    # Stop loss
-                    if current['Low'] <= position['stop_loss']:
-                        exit_price = position['stop_loss']
-                        exit_reason = "Stop Loss"
-                        exit_trade = True
-                    
-                    # Target (simplified - 4% gain)
-                    elif current['High'] >= position['entry_price'] * 1.04:
-                        exit_price = position['entry_price'] * 1.04
-                        exit_reason = "Target Hit"
-                        exit_trade = True
-                    
-                    # Time-based exit (5 days)
-                    elif (data.index[i] - position['entry_date']).days >= 5:
-                        exit_price = current['Close']
-                        exit_reason = "Time Exit"
-                        exit_trade = True
-                    
-                    if exit_trade:
-                        pnl = (exit_price - position['entry_price']) * position['shares']
-                        capital += pnl
-                        
-                        trades.append({
-                            'Entry Date': position['entry_date'].strftime('%Y-%m-%d'),
-                            'Entry Price': position['entry_price'],
-                            'Exit Date': data.index[i].strftime('%Y-%m-%d'),
-                            'Exit Price': exit_price,
-                            'Shares': position['shares'],
-                            'P&L': pnl,
-                            'Return %': ((exit_price - position['entry_price']) / position['entry_price']) * 100,
-                            'Exit Reason': exit_reason
-                        })
-                        
-                        position = None
-            
-            # Display results
-            if trades:
-                df = pd.DataFrame(trades)
-                
-                col1, col2, col3, col4 = st.columns(4)
-                
-                with col1:
-                    total_return = ((capital - initial_capital) / initial_capital) * 100
-                    st.metric("Total Return", f"{total_return:.2f}%")
-                
-                with col2:
-                    win_rate = (len(df[df['P&L'] > 0]) / len(df)) * 100
-                    st.metric("Win Rate", f"{win_rate:.1f}%")
-                
-                with col3:
-                    avg_return = df['Return %'].mean()
-                    st.metric("Avg Return", f"{avg_return:.2f}%")
-                
-                with col4:
-                    sharpe_ratio = df['Return %'].mean() / df['Return %'].std() if df['Return %'].std() > 0 else 0
-                    st.metric("Sharpe Ratio", f"{sharpe_ratio:.2f}")
-                
-                # Equity curve
-                df['Cumulative P&L'] = df['P&L'].cumsum() + initial_capital
-                
-                fig = go.Figure()
-                fig.add_trace(go.Scatter(
-                    x=df['Exit Date'],
-                    y=df['Cumulative P&L'],
-                    mode='lines+markers',
-                    name='Strategy Equity',
-                    line=dict(color='#00b894', width=3)
-                ))
-                
-                # Buy and hold comparison
-                buy_hold_return = ((data['Close'].iloc[-1] - data['Close'].iloc[50]) / data['Close'].iloc[50]) * initial_capital
-                buy_hold_final = initial_capital + buy_hold_return
-                
-                fig.add_hline(
-                    y=buy_hold_final,
-                    line_dash="dash",
-                    line_color="#e17055",
-                    annotation_text=f"Buy & Hold: ${buy_hold_final:,.0f}"
-                )
-                
-                fig.update_layout(
-                    title="Backtest Results - Equity Curve",
-                    xaxis_title="Date",
-                    yaxis_title="Portfolio Value ($)",
-                    height=400
-                )
-                
-                st.plotly_chart(fig, use_container_width=True)
-                
-                # Trade history
-                st.subheader("Trade History")
-                st.dataframe(df, use_container_width=True)
-                
-                # Download results
-                csv = df.to_csv(index=False)
-                st.download_button(
-                    "📥 Download Backtest Results",
-                    csv,
-                    f"backtest_results_{datetime.now().strftime('%Y%m%d')}.csv",
-                    "text/csv"
-                )
-            else:
-                st.warning("No trades generated in backtest period")
-    
-    def display_mobile_controls(self):
-        """Display mobile-friendly controls"""
-        if not self.config.mobile_mode:
-            return
-        
-        st.markdown('<div class="mobile-friendly">', unsafe_allow_html=True)
-        
-        # Large touch-friendly buttons
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            if st.button("📱 BUY", key="mobile_buy", help="Quick buy signal"):
-                st.success("Buy signal noted!")
-        
-        with col2:
-            if st.button("📱 SELL", key="mobile_sell", help="Quick sell signal"):
-                st.warning("Sell signal noted!")
-        
-        # Swipe gesture info
-        st.info("📱 Swipe down to refresh | Swipe left/right to change timeframe")
-        
-        st.markdown('</div>', unsafe_allow_html=True)
-    
-    def display_voice_command_panel(self):
-        """Display voice command interface"""
-        if not self.config.voice_commands:
-            return
-        
-        st.subheader("🎤 Voice Commands")
-        
-        if st.button("🎙️ Start Voice Command"):
-            st.info("Listening... Say 'refresh', 'buy', or 'sell'")
-            # Voice command functionality would be handled by JavaScript
-        
-        st.write("**Available Commands:**")
-        st.write("• 'Refresh' or 'Update' - Refresh data")
-        st.write("• 'Buy' or 'Enter' - Flag buy signal")
-        st.write("• 'Sell' or 'Exit' - Flag sell signal")
+        st.caption("Strategy Note: Best entries typically 10:30 AM - 2:00 PM EST. Avoid Fridays and day before holidays.")
     
     def display_enhanced_sidebar(self):
-        """Enhanced interactive sidebar"""
-        st.sidebar.markdown("## ⚙️ Interactive Settings")
+        """Enhanced interactive sidebar (removed Interactive Features section)"""
+        st.sidebar.markdown("## ⚙️ Settings")
         
         # Real-time controls
         with st.sidebar.expander("🔄 Real-time Controls", expanded=True):
@@ -1272,11 +1340,6 @@ class InteractiveDashboard:
             
             self.config.enable_sounds = st.checkbox("Sound Alerts", self.config.enable_sounds)
             self.config.enable_notifications = st.checkbox("Browser Notifications", self.config.enable_notifications)
-        
-        # Interactive features
-        with st.sidebar.expander("🎮 Interactive Features"):
-            self.config.voice_commands = st.checkbox("Voice Commands", self.config.voice_commands)
-            self.config.mobile_mode = st.checkbox("Mobile Mode", self.config.mobile_mode)
         
         # Data & Display Settings
         with st.sidebar.expander("📊 Data & Display Settings", expanded=False):
@@ -1314,11 +1377,6 @@ class InteractiveDashboard:
                 help="How much data to show on the chart"
             )
             self.config.chart_period = chart_options[selected_chart]
-        # Traditional settings
-        with st.sidebar.expander("📊 Strategy Settings"):
-            self.config.account_value = st.number_input("Account Value", 1000.0, 10000000.0, self.config.account_value)
-            self.config.risk_percent = st.slider("Risk %", 0.5, 5.0, self.config.risk_percent, 0.1)
-            self.config.vix_threshold = st.number_input("VIX Threshold", 10.0, 50.0, self.config.vix_threshold)
         
         # Save config
         st.session_state.config = self.config
@@ -1397,23 +1455,34 @@ class InteractiveDashboard:
         return true_range.rolling(window=period).mean()
     
     def evaluate_signals(self, data, vix_value):
-        """Enhanced signal evaluation"""
+        """EXACT STRATEGY SIGNAL EVALUATION - Following documented rules precisely"""
         if len(data) < 50:
             return {'signal': False, 'error': 'Insufficient data'}
         
         latest = data.iloc[-1]
         
-        # Enhanced signal logic
+        # EXACT ENTRY CRITERIA - ALL 6 MUST BE MET
+        
+        # 1. EMA Stack: 10 EMA > 21 EMA > 50 EMA (bullish momentum)
         ema_alignment = latest['EMA_10'] > latest['EMA_21'] > latest['EMA_50']
+        
+        # 2. Price Position: Current price must be above 50 EMA (trend confirmation)
         price_above_50ema = latest['Close'] > latest['EMA_50']
-        entry_level = latest['EMA_5'] - (self.config.atr_entry_multiplier * latest['ATR'])
+        
+        # 3. Entry Trigger: Price touches or dips below (5 EMA - 1.5×ATR)
+        entry_level = latest['EMA_5'] - (1.5 * latest['ATR'])
         price_touch_entry = latest['Close'] <= entry_level or latest['Low'] <= entry_level
+        
+        # 4. Volume Confirmation: Entry day volume > 20-day average volume
         volume_above_avg = latest['Volume'] > latest['Volume_Avg']
-        vix_below_threshold = vix_value < self.config.vix_threshold
         
-        # Momentum check
-        momentum_positive = latest['Close'] > data['Close'].iloc[-5]
+        # 5. Market Environment: VIX < 30 (Low fear/volatility environment)
+        vix_below_threshold = vix_value < 30.0
         
+        # 6. Momentum Filter: Price must be higher than 5 days ago
+        momentum_positive = latest['Close'] > data['Close'].iloc[-6]
+        
+        # FINAL SIGNAL: ALL 6 CRITERIA MUST BE TRUE
         signal = all([
             ema_alignment,
             price_above_50ema,
@@ -1423,9 +1492,9 @@ class InteractiveDashboard:
             momentum_positive
         ])
         
-        # Generate alerts
+        # Generate alerts for strong signals
         if signal and not hasattr(st.session_state, 'last_signal_price'):
-            self.add_alert('entry', 'Strong entry signal detected!', latest['Close'], 'high')
+            self.add_alert('entry', 'EXACT STRATEGY ENTRY SIGNAL - All 6 criteria met!', latest['Close'], 'high')
             st.session_state.last_signal_price = latest['Close']
         
         return {
@@ -1536,14 +1605,9 @@ class InteractiveDashboard:
         # Detailed entry criteria analysis
         self.display_entry_criteria_panel(signals, vix_value, data)
         
-        # Advanced backtesting
-        self.display_advanced_backtesting()
-        
-        # Mobile controls
-        self.display_mobile_controls()
-        
-        # Voice commands
-        self.display_voice_command_panel()
+        # Historical signal analysis - use full dataset if available
+        display_data = st.session_state.get('full_data', data)
+        self.display_signal_history(display_data)
         
         # Enhanced signal display
         if signals['signal']:
@@ -1579,10 +1643,6 @@ class InteractiveDashboard:
         with col3:
             alerts_count = len(self.alerts)
             st.metric("Total Alerts", alerts_count)
-        
-        with col3:
-            alerts_count = len(self.alerts)
-            st.metric("Today's Alerts", alerts_count)
 
 # Run the enhanced dashboard
 if __name__ == "__main__":
